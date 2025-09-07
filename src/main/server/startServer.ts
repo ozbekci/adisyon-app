@@ -21,69 +21,10 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
   api.use(express.json());
 
   // ====== Handshake key management (RSA, RS256) ======
-  const keyDir = path.join(app.getPath('userData'), 'keys');
-  const privPath = path.join(keyDir, 'handshake.key');
-  const pubPath = path.join(keyDir, 'handshake.pub');
-
+ 
   function ensureDirSecure(dir: string) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     try { fs.chmodSync(dir, 0o700); } catch { /* ignore */ }
-  }
-
-  function ensureKeyPair(): { privateKey: string; publicKey: string } {
-    ensureDirSecure(keyDir);
-    if (fs.existsSync(privPath) && fs.existsSync(pubPath)) {
-      const privateKey = fs.readFileSync(privPath, 'utf8');
-      const publicKey = fs.readFileSync(pubPath, 'utf8');
-      return { privateKey, publicKey };
-    }
-    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-    });
-    fs.writeFileSync(privPath, privateKey, { mode: 0o600 });
-    fs.writeFileSync(pubPath, publicKey, { mode: 0o644 });
-    try { fs.chmodSync(privPath, 0o600); } catch { /* ignore */ }
-    try { fs.chmodSync(pubPath, 0o644); } catch { /* ignore */ }
-    return { privateKey, publicKey };
-  }
-
-  const { privateKey: handshakePrivateKey, publicKey: handshakePublicKey } = ensureKeyPair();
-
-  // Public key fingerprint (kid) for versioning
-  function computeFingerprint(pem: string): string {
-    const normalized = pem.replace(/-----BEGIN PUBLIC KEY-----/g, '')
-      .replace(/-----END PUBLIC KEY-----/g, '')
-      .replace(/\s+/g, '');
-    const der = Buffer.from(normalized, 'base64');
-    const hash = crypto.createHash('sha256').update(der).digest('base64url');
-    return hash; // base64url sha256 fingerprint
-  }
-  const publicKid = computeFingerprint(handshakePublicKey);
-
-  // Simple in-memory rate limiter for handshake (per IP)
-  const rlWindowMs = 60_000;
-  const rlMax = 20; // 20 requests per minute per IP
-  const rlMap = new Map<string, { count: number; windowStart: number }>();
-  function rateLimit(req: Request, res: Response): boolean {
-    const fwd = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim();
-    const ip = fwd || (req.socket.remoteAddress || 'unknown');
-    const deviceId = (req.headers['x-device-id'] as string) || (req.body && req.body.deviceId);
-    const auth = (req.headers.authorization || '').slice(0, 60);
-    const key = deviceId ? `dev:${deviceId}` : auth ? `tok:${auth}` : `ip:${ip}`;
-    const now = Date.now();
-    const entry = rlMap.get(key);
-    if (!entry || now - entry.windowStart > rlWindowMs) {
-      rlMap.set(key, { count: 1, windowStart: now });
-      return false;
-    }
-    entry.count += 1;
-    if (entry.count > rlMax) {
-      res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many requests' } });
-      return true;
-    }
-    return false;
   }
 
   // JTI replay tracking (Redis if available, else in-memory)
@@ -135,57 +76,17 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     try {
       const result = await authenticate(dbManager, username, password);
       if (!result) return res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Geçersiz kullanıcı veya parola' } });
-      return res.json({ data: { user: result.user, tokens: result.tokens, migrated: result.migrated } });
+      return res.json({ user: result.user, token: result.tokens, migrated: result.migrated });
     } catch (e: any) {
       return res.status(500).json({ error: { code: 'AUTH_ERROR', message: e.message } });
     }
   });
 
   /* ============== Features / Mobile ============== */
-  api.post('/handshake', async (req: Request, res: Response) => {
-    if (rateLimit(req, res)) return;
-    try {
-      const payload = { instanceId: 'local-instance' } as any;
-      const jwtid = crypto.randomBytes(16).toString('hex');
-      const token = jwt.sign(payload, handshakePrivateKey, {
-        algorithm: 'RS256',
-        expiresIn: '5m',
-        issuer: 'adisyon-pos',
-        jwtid,
-        header: { kid: publicKid, alg: 'RS256' }
-      });
-      res.setHeader('Cache-Control', 'no-store');
-      res.json({ data: { valid: true, token, alg: 'RS256', publicKey: handshakePublicKey, kid: publicKid, ttlSeconds: 300, instanceId: 'local-instance' } });
-    } catch (e: any) {
-      res.status(500).json({ error: { code: 'HANDSHAKE_SIGN_ERROR', message: e.message } });
-    }
-  });
-
-  // Optional: one-time handshake validation to consume the nonce (prevents replay)
-  api.post('/handshake/validate', async (req: Request, res: Response) => {
-    if (rateLimit(req, res)) return;
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'token required' } });
-    try {
-      const decoded = jwt.verify(token, handshakePublicKey, { algorithms: ['RS256'], issuer: 'adisyon-pos' }) as any;
-      const jti = decoded.jti as string | undefined;
-      const exp = decoded.exp as number | undefined; // seconds since epoch
-      if (!jti || !exp) return res.status(400).json({ error: { code: 'INVALID_TOKEN', message: 'missing jti/exp' } });
-      const expMs = exp * 1000;
-      const now = Date.now();
-      if (expMs < now) return res.status(400).json({ error: { code: 'TOKEN_EXPIRED', message: 'expired' } });
-      const ttlMs = expMs - now;
-      const ok = await consumeJti(jti, ttlMs);
-      if (!ok) return res.status(409).json({ error: { code: 'REPLAY', message: 'token already used' } });
-      return res.json({ data: { ok: true, kid: publicKid, exp: expMs } });
-    } catch (e: any) {
-      return res.status(400).json({ error: { code: 'INVALID_TOKEN', message: e.message } });
-    }
-  });
 
   api.get('/features/mobile', async (_req: Request, res: Response) => {
     const flags = await dbManager.getFeatureFlags();
-    res.json({ data: { mobileEnabled: flags.mobileEnabled } });
+    res.json({ mobileEnabled: flags.mobileEnabled });
   });
 
   api.put('/features/mobile', async (req: Request, res: Response) => {
@@ -196,7 +97,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     try {
       await dbManager.setMobileEnabled(mobileEnabled);
       const flags = await dbManager.getFeatureFlags();
-      res.json({ data: { mobileEnabled: flags.mobileEnabled } });
+      res.json({ mobileEnabled: flags.mobileEnabled });
     } catch (e: any) {
       res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } });
     }
@@ -207,13 +108,13 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!password) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'password required' } });
     const user = await dbManager.authenticateUser('admin', password);
     if (!user) return res.status(401).json({ error: { code: 'OWNER_AUTH_FAILED', message: 'Geçersiz parola' } });
-    res.json({ data: { ok: true } });
+    res.json({ verified: true });
   });
 
   /* ============== Waiters ============== */
   api.get('/waiters/active', async (_req: Request, res: Response) => {
     const list = await dbManager.getActiveWaiters();
-    res.json({ data: list });
+    res.json(list);
   });
 
   // Waiter login: supports either (username/password) or (waiterId/pin)
@@ -231,9 +132,9 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
           return res.status(401).json({ error: { code: 'WAITER_AUTH_FAILED', message: 'Geçersiz kullanıcı veya PIN' } });
         }
         // verifyWaiterPin zaten last_checkin_at alanını güncelliyor; token üretip döndür.
-        const accessToken = Buffer.from(`${verify.waiter.id}:waiter:${Date.now()}`).toString('base64');
+        const token = Buffer.from(`${verify.waiter.id}:waiter:${Date.now()}`).toString('base64');
         const now = (dbManager as any).getTurkeyDateTime();
-        return res.json({ data: { accessToken, waiter: { id: verify.waiter.id, name: verify.waiter.name, username: verify.waiter.username }, lastCheckin: now } });
+        return res.json({ token, waiter: { id: verify.waiter.id, name: verify.waiter.name, username: verify.waiter.username }, lastCheckin: now });
     } catch (e: any) {
       
       res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } });
@@ -246,7 +147,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     const waiterId = Number(req.query.waiterId);
     if (!waiterId) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'waiterId required' } });
     const status = await dbManager.waiterStatus(waiterId);
-    res.json({ data: status });
+    res.json(status);
   });
 
   /* ============== Tables & Menu (Mobile/Public) ============== */
@@ -255,7 +156,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!auth) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Token gerekli' } });
     try {
       const tables = await dbManager.getTables();
-      res.json({ data: tables });
+      res.json(tables);
     } catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 
@@ -263,7 +164,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     try {
       const items = await dbManager.getMenuItems();
       const categories = Array.from(new Set(items.map(i => i.category))).sort();
-      res.json({ data: { categories, items } });
+      res.json({ categories, items });
     } catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 
@@ -273,7 +174,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!tableId) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'tableId required' } });
     try {
       const order = await dbManager.getOpenOrderForTable(tableId);
-      res.json({ data: order });
+      res.json(order);
     } catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 
@@ -289,7 +190,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
         enriched.push({ menuItemId: it.menuItemId, quantity: it.quantity, price, notes: it.notes });
       }
       const order = await dbManager.createOrder({ tableId, orderType, items: enriched });
-      res.status(201).json({ data: order });
+      res.status(201).json(order);
     } catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 
@@ -299,7 +200,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!orderId || !Array.isArray(items)) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'orderId & items required' } });
     try {
       const updated = await dbManager.addItemsToOrder(orderId, items);
-      res.json({ data: updated });
+      res.json(updated);
     } catch (e: any) {
       if (e.message === 'ORDER_NOT_FOUND') return res.status(404).json({ error: { code: 'ORDER_NOT_FOUND', message: 'Sipariş bulunamadı' } });
       if (e.message === 'ORDER_LOCKED') return res.status(409).json({ error: { code: 'ORDER_LOCKED', message: 'Sipariş kilitli' } });
@@ -314,7 +215,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!orderId || !status) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'status required' } });
     try {
       const updated = await dbManager.updateOrderStatusValidated(orderId, status, version);
-      res.json({ data: updated });
+      res.json(updated);
     } catch (e: any) {
       if (e.message === 'ORDER_NOT_FOUND') return res.status(404).json({ error: { code: 'ORDER_NOT_FOUND', message: 'Sipariş yok' } });
       if (e.message === 'INVALID_STATUS') return res.status(400).json({ error: { code: 'INVALID_STATUS', message: 'Geçersiz geçiş' } });
@@ -328,13 +229,13 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
     if (!orderId) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'id required' } });
     const order = await dbManager.getOrderPublic(orderId);
     if (!order) return res.status(404).json({ error: { code: 'ORDER_NOT_FOUND', message: 'Sipariş yok' } });
-    res.json({ data: order });
+    res.json(order);
   });
 
   api.get('/orders/active', async (_req: Request, res: Response) => {
     try {
       const list = await dbManager.listActiveOrders();
-      res.json({ data: list });
+      res.json(list);
     } catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 
@@ -342,7 +243,7 @@ export async function startServer(dbManager: DatabaseManager): Promise<StartedSe
   api.get('/tables', async (req: Request, res: Response) => {
     const auth = requireAuth(req.headers.authorization);
     if (!auth) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Token gerekli' } });
-    try { const tables = await dbManager.getTables(); res.json({ data: tables }); }
+    try { const tables = await dbManager.getTables(); res.json(tables); }
     catch (e: any) { res.status(500).json({ error: { code: 'SERVER_ERROR', message: e.message } }); }
   });
 

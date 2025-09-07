@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 export function registerWaiterDomain(proto: typeof DatabaseManager.prototype) {
   proto.getActiveWaiters = async function (this: DatabaseManager) {
     const rows = await (this as any).all("SELECT id, full_name FROM users WHERE role = 'waiter' AND is_active = true ORDER BY full_name ASC");
+    console.log(rows)
     return rows.map((r: any) => ({ id: r.id, name: r.full_name }));
   };
 
