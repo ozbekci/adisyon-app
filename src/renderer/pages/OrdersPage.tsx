@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import type { PaymentMethod } from "../../shared/types";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../store/store";
 import {
@@ -31,7 +32,7 @@ const OrdersPage: React.FC = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<
-    "nakit" | "kredi-karti" | "ticket" | null
+    PaymentMethod | null
   >(null);
   const partialPayments = useSelector(
     (state: RootState) => state.partialOrder.payments
@@ -124,8 +125,8 @@ const OrdersPage: React.FC = () => {
   };
 
   const handlePaymentSubmit = async (
-    paymentMethod: "nakit" | "kredi-karti" | "ticket" | "borc",
-    customerName?: string
+    paymentMethod: PaymentMethod,
+    customerId?: number
   ) => {
     if (!selectedOrder) {
       alert("Sipariş seçilmedi.");
@@ -139,8 +140,8 @@ const OrdersPage: React.FC = () => {
         amount: selectedOrder.total,
         method: paymentMethod,
       };
-      if (paymentMethod === "borc" && customerName) {
-        paymentPayload.customer_id = customerName;
+      if (paymentMethod === "borc" && customerId) {
+        paymentPayload.customer_id = customerId;
       }
       const response = await (window as any).electronAPI.processPayment(
         paymentPayload
@@ -193,7 +194,7 @@ const OrdersPage: React.FC = () => {
   };
 
   const handleSplitPayment = async (splitData: {
-    paymentMethod: "nakit" | "kredi-karti" | "ticket";
+    paymentMethod: PaymentMethod;
     splitType: "items" | "amount";
     splitItems?: { itemId: number; quantity: number }[];
     splitAmount?: number;

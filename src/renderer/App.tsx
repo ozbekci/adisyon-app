@@ -29,6 +29,8 @@ import PastOrdersPage from "./pages/PastOrdersPage";
 import TableSelectPage from "./pages/TableSelectPage";
 import RevenuePage from "./pages/RevenuePage";
 import SettingsPage from "./pages/SettingsPage";
+import CustomerDebtDetailsPage from "./pages/CustomerDebtDetailsPage";
+import CustomerOrderHistoryPage from "./pages/CustomerOrderHistoryPage";
 
 // Korumalı route component'i
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
@@ -72,7 +74,9 @@ const App: React.FC = () => {
     "/menu-management",
     "/users",
     "/revenue",
-    "/customers",
+  "/customers",
+  "/customers/debts",
+  "/customers/history",
     "/add-menu-item", // Yeni ürün ekle: sidebar gizli
     "/add-category", // Yeni kategori ekle: sidebar gizli
     "/edit-category",
@@ -111,7 +115,9 @@ const App: React.FC = () => {
     "/main-management", // masa yönetimi: sayfa scroll kapalı
     "/table-management", // masa yönetimi (detay): sayfa scroll kapalı
     "/orders", // sipariş yönetimi: sayfa scroll kapalı
-    "/customers", // müşteri yönetimi: sayfa scroll kapalı (iç pencere scroll)
+  "/customers", // müşteri yönetimi: sayfa scroll kapalı (iç pencere scroll)
+  "/customers/debts",
+  "/customers/history",
   ];
   const isNoScroll = noScrollPaths.some((p) => location.pathname.startsWith(p));
 
@@ -166,6 +172,22 @@ const App: React.FC = () => {
                 </PrivateRoute>
               }
             ></Route>
+            <Route
+              path="/customers/debts"
+              element={
+                <PrivateRoute>
+                  <CustomerDebtDetailsPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/customers/history"
+              element={
+                <PrivateRoute>
+                  <CustomerOrderHistoryPage />
+                </PrivateRoute>
+              }
+            />
             <Route
               path="/dashboard"
               element={

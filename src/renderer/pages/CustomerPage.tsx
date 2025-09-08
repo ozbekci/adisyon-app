@@ -35,6 +35,7 @@ const CustomerPage: React.FC = () => {
   );
   const [form, setForm] = useState<Partial<Customer>>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [search, setSearch] = useState('');
 
   // Müşteri listesini çek
   const fetchCustomers = async () => {
@@ -142,6 +143,16 @@ const CustomerPage: React.FC = () => {
         >
           Tüm Müşteriler
         </button>
+        <div className="relative ml-auto">
+          <input
+            type="text"
+            placeholder="Ara..."
+            value={search}
+            onChange={(e)=> setSearch(e.target.value)}
+            className="input pl-3 pr-8 py-2 w-56"
+          />
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-white/40">⌘K</span>
+        </div>
       </div>
 
       {/* Liste + Form Alanı */}
@@ -167,10 +178,26 @@ const CustomerPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10 text-white/80">
-                  {customersWithDebt.map((c) => (
+                  {customersWithDebt
+                    .filter(c => !search || c.customerName.toLowerCase().includes(search.toLowerCase()))
+                    .map((c) => (
                     <tr key={c.id} className="hover:bg-white/5">
                       <td className="p-3">{c.customerName}</td>
-                      <td className="p-3">₺{c.debt.toFixed(2)}</td>
+                      <td className="p-3 flex items-center gap-3">
+                        <span>₺{c.debt.toFixed(2)}</span>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => navigate('/customers/debts', { state: { customerId: c.id, customerName: c.customerName } })}
+                        >
+                          Borç Detayları
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => navigate('/customers/history', { state: { customerId: c.id, customerName: c.customerName } })}
+                        >
+                          Geçmiş Siparişler
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {customersWithDebt.length === 0 && (
@@ -201,18 +228,28 @@ const CustomerPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10 text-white/80">
-                  {customers.map((c) => (
+                  {customers
+                    .filter(c => !search || c.customerName.toLowerCase().includes(search.toLowerCase()))
+                    .map((c) => (
                     <tr key={c.id} className="hover:bg-white/5">
                       <td className="p-3">{c.customerName}</td>
                       <td className="p-3">{c.telephoneNumber}</td>
                       <td className="p-3">{c.address}</td>
                       <td className="p-3">
-                        <button
-                          className="btn btn-secondary px-2 py-1 text-xs"
-                          onClick={() => startEdit(c)}
-                        >
-                          Düzenle
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            className="btn btn-secondary px-2 py-1 text-xs"
+                            onClick={() => startEdit(c)}
+                          >
+                            Düzenle
+                          </button>
+                          <button
+                            className="btn btn-primary px-2 py-1 text-xs"
+                            onClick={() => navigate('/customers/history', { state: { customerId: c.id, customerName: c.customerName } })}
+                          >
+                            Geçmiş
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

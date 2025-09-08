@@ -58,7 +58,7 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
 
   proto.setWaiterPin = proto.setWaiterPin; // preserve if needed elsewhere
 
-  proto.createOrder = async function (this: DatabaseManager, orderData: { items: any[]; tableId?: number; orderType?: 'dine-in' | 'takeaway' | 'delivery' | 'trendyol'; customerName?: string; paymentMethod?: string; isPaid?: boolean; }): Promise<Order> {
+  proto.createOrder = async function (this: DatabaseManager, orderData: { items: any[]; tableId?: number; orderType?: 'dine-in' | 'takeaway' | 'delivery' | 'trendyol'; customerId?: number | null; customerName?: string | null; paymentMethod?: string; isPaid?: boolean; }): Promise<Order> {
     const total = orderData.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const orderType = orderData.orderType || (orderData.tableId ? 'dine-in' : 'takeaway');
     const paymentStatus = orderData.isPaid ? 'paid' : 'unpaid';
@@ -68,7 +68,7 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
       tableNumber = tbl?.number || null;
     }
     const turkeyDateTime = (this as any).getTurkeyDateTime();
-    const orderResult = await (this as any).run('INSERT INTO orders (table_id, order_type, customer_name, payment_status, table_number, total, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',[orderData.tableId || null, orderType, orderData.customerName || null, paymentStatus, tableNumber, total, turkeyDateTime]);
+  const orderResult = await (this as any).run('INSERT INTO orders (table_id, order_type, customer_id, customer_name, payment_status, table_number, total, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',[orderData.tableId || null, orderType, orderData.customerId || null, orderData.customerName || null, paymentStatus, tableNumber, total, turkeyDateTime]);
     console.log('Order insert result:', orderResult);
     let orderId = orderResult.id;
     if (!orderId) {
@@ -101,9 +101,9 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
     return orders;
   };
 
-  proto.processPayment = async function (this: DatabaseManager, paymentData: { orderId: number; amount: number; method: string; customer_id?: string }) {
+  proto.processPayment = async function (this: DatabaseManager, paymentData: { orderId: number; amount: number; method: string; customer_id?: number }) {
     const turkeyDateTime = (this as any).getTurkeyDateTime();
-    await (this as any).run('UPDATE orders SET payment_status = $1, paid_at = $2, payment_method = $3, paid_amount = $4 , customer_name = $5 WHERE id = $6',[paymentData.method === 'debt' ? 'debt' : 'paid', turkeyDateTime, paymentData.method, paymentData.amount, paymentData.customer_id, paymentData.orderId]);
+  await (this as any).run('UPDATE orders SET payment_status = $1, paid_at = $2, payment_method = $3, paid_amount = $4 , customer_id = $5 WHERE id = $6',[paymentData.method === 'debt' ? 'debt' : 'paid', turkeyDateTime, paymentData.method, paymentData.amount, paymentData.customer_id || null, paymentData.orderId]);
     const order = await (this as any).get('SELECT table_id FROM orders WHERE id = $1', [paymentData.orderId]);
     if (order?.table_id) await (this as any).run('UPDATE tables SET status = $1 WHERE id = $2', ['available', order.table_id]);
     const historyId = await (this as any).moveOrderToHistory(paymentData.orderId);
@@ -118,9 +118,9 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
       const paymentType = order.payment_method || 'nakit';
       const paidAt = order.paid_at;
       const paidAmount = order.paid_amount;
-      const customer_id = order.customer_name;
+  const customer_id = order.customer_id || null;
       console.log(customer_id);
-      const historyResult = await (this as any).run('INSERT INTO order_history (order_type, customer_id, total, payment_status, paid_at, payment_method, paid_amount, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',[order.order_type, customer_id, order.total, order.payment_status, paidAt, paymentType, paidAmount, order.created_at]);
+  const historyResult = await (this as any).run('INSERT INTO order_history (order_type, customer_id, total, payment_status, paid_at, payment_method, paid_amount, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',[order.order_type, customer_id, order.total, order.payment_status, paidAt, paymentType, paidAmount, order.created_at]);
       const historyId = historyResult.id;
       for (const item of orderItems) {
         await (this as any).run('INSERT INTO order_history_items (order_history_id, menu_item_id, quantity, price, notes) VALUES ($1, $2, $3, $4, $5)',[historyId, item.menu_item_id, item.quantity, item.price, item.notes]);
@@ -148,7 +148,17 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
 
   proto.getPastOrders = async function (this: DatabaseManager) {
   console.log('getPastOrders called');
-    const orders = await (this as any).all(`SELECT oh.*, CASE WHEN oh.order_type = 'dine-in' AND oh.customer_id IS NOT NULL THEN (SELECT number::text FROM tables WHERE id = oh.customer_id) ELSE oh.customer_id::text END as table_number FROM order_history oh ORDER BY oh.created_at DESC`);
+    const orders = await (this as any).all(`
+      SELECT 
+        oh.*, 
+        COALESCE(oh.paid_at, oh.created_at) AS created_at,
+        CASE 
+          WHEN oh.order_type = 'dine-in' AND oh.customer_id IS NOT NULL 
+            THEN (SELECT number::text FROM tables WHERE id = oh.customer_id)
+          ELSE oh.customer_id::text 
+        END as table_number 
+      FROM order_history oh 
+      ORDER BY COALESCE(oh.paid_at, oh.created_at) DESC`);
     for (const order of orders) {
       order.items = await (this as any).all(`SELECT ohi.*, mi.name, mi.description FROM order_history_items ohi JOIN menu_items mi ON ohi.menu_item_id = mi.id WHERE ohi.order_history_id = $1`, [order.id]);
       const partials = await (this as any).all('SELECT cash, credit_kart, ticket FROM partial_orders WHERE order_history_id = $1', [order.id]);
@@ -159,5 +169,61 @@ export function registerOrderDomain(proto: typeof DatabaseManager.prototype) {
 
   proto.recordPartialPayment = async function (this: DatabaseManager, orderHistoryId: number, cash: number, credit_kart: number, ticket: number) {
     await (this as any).run('INSERT INTO partial_orders (order_history_id, cash, credit_kart, ticket) VALUES ($1,$2,$3,$4)',[orderHistoryId, cash, credit_kart, ticket]);
+  };
+
+  // Customer order history (all or by specific customer if provided)
+  proto.getCustomerOrderHistory = async function (this: DatabaseManager, customerId?: number) {
+    const params: any[] = [];
+    let where = 'WHERE oh.customer_id IS NOT NULL';
+    if (customerId) { where += ' AND oh.customer_id = $1'; params.push(customerId); }
+    const orders = await (this as any).all(
+      `SELECT oh.*, COALESCE(oh.paid_at, oh.created_at) AS created_at,
+              c.customer_name as customer_name
+       FROM order_history oh
+       LEFT JOIN customers c ON c.id = oh.customer_id
+       ${where}
+       ORDER BY COALESCE(oh.paid_at, oh.created_at) DESC`,
+      params
+    );
+    for (const order of orders) {
+      order.items = await (this as any).all(
+        `SELECT ohi.*, mi.name, mi.description
+         FROM order_history_items ohi
+         JOIN menu_items mi ON ohi.menu_item_id = mi.id
+         WHERE ohi.order_history_id = $1`,
+        [order.id]
+      );
+    }
+    return orders;
+  };
+
+  // List customer's unpaid debt orders from history
+  proto.getCustomerDebts = async function (this: DatabaseManager, customerId: number) {
+    const orders = await (this as any).all(
+      `SELECT oh.*, (
+         SELECT COALESCE(SUM(cash + credit_kart + ticket),0)
+         FROM partial_orders po WHERE po.order_history_id = oh.id
+       ) as partial_paid
+       FROM order_history oh
+       WHERE oh.customer_id = $1 AND (oh.payment_method = 'borc' OR oh.payment_status = 'debt')
+       ORDER BY oh.created_at DESC`,
+      [customerId]
+    );
+    return orders;
+  };
+
+  // Settle selected debt orders by updating payment_method and payment_status in order_history
+  proto.settleCustomerDebts = async function (this: DatabaseManager, data: { customerId: number; orderHistoryIds: number[]; method: string }) {
+    if (!data.orderHistoryIds || data.orderHistoryIds.length === 0) return true;
+    const ids = data.orderHistoryIds;
+    const now = (this as any).getTurkeyDateTime();
+    // Update method and status to paid; paid_amount remains historical; partials kept as-is
+    const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
+    await (this as any).run(
+      `UPDATE order_history SET payment_method = $1, payment_status = 'paid', paid_at = $${ids.length + 2}
+       WHERE customer_id = $${ids.length + 3} AND id IN (${placeholders}) AND (payment_method = 'borc' OR payment_status = 'debt')`,
+      [data.method, ...ids, now, data.customerId]
+    );
+    return true;
   };
 }

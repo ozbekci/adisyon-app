@@ -22,6 +22,10 @@ const PastOrdersPage: React.FC = () => {
   const [startDate, setStartDate] = React.useState<string>("");
   const [endDate, setEndDate] = React.useState<string>("");
   const navigate = useNavigate();
+  // Only display orders that are not marked as debt (borc)
+  const filteredPastOrders = (pastOrders || []).filter(
+    (o) => o.payment_method !== "borc"
+  );
 
   // Daha canlı ödeme yöntemi rozet sınıfları
   const getPaymentBadgeClasses = (method?: Order["payment_method"]) => {
@@ -86,17 +90,17 @@ const PastOrdersPage: React.FC = () => {
       {tab === "orders" && !loading && !error && (
         <div className="flex-1 min-h-0 flex flex-col space-y-4">
           {/* Özet Kartları */}
-          {pastOrders && pastOrders.length > 0 && (
+          {filteredPastOrders && filteredPastOrders.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="card p-4">
                 <div className="text-2xl font-bold text-blue-300">
-                  {pastOrders.length}
+                  {filteredPastOrders.length}
                 </div>
                 <div className="text-sm text-white/60">Toplam Sipariş</div>
               </div>
               <div className="card p-4">
                 <div className="text-2xl font-bold text-emerald-300">
-                  {pastOrders
+                  {filteredPastOrders
                     .reduce((sum, order) => sum + (order.total || 0), 0)
                     .toFixed(2)}{" "}
                   ₺
@@ -105,7 +109,7 @@ const PastOrdersPage: React.FC = () => {
               </div>
               <div className="card p-4">
                 <div className="text-2xl font-bold text-purple-300">
-                  {pastOrders.reduce(
+                  {filteredPastOrders.reduce(
                     (sum, order) => sum + (order.items?.length || 0),
                     0
                   )}
@@ -114,12 +118,12 @@ const PastOrdersPage: React.FC = () => {
               </div>
               <div className="card p-4">
                 <div className="text-2xl font-bold text-orange-300">
-                  {pastOrders.length > 0
+                  {filteredPastOrders.length > 0
                     ? (
-                        pastOrders.reduce(
+                        filteredPastOrders.reduce(
                           (sum, order) => sum + (order.total || 0),
                           0
-                        ) / pastOrders.length
+                        ) / filteredPastOrders.length
                       ).toFixed(2)
                     : "0.00"}{" "}
                   ₺
@@ -157,7 +161,7 @@ const PastOrdersPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10 text-white/80">
-                    {[...pastOrders]
+                    {[...filteredPastOrders]
                       .sort(
                         (a, b) =>
                           new Date(b.created_at || b.updatedAt).getTime() -
@@ -241,6 +245,8 @@ const PastOrdersPage: React.FC = () => {
                                 ? "Kredi Kartı"
                                 : order.payment_method === "ticket"
                                 ? "Ticket"
+                                : order.payment_method === "borc"
+                                ? "Borç"
                                 : order.payment_method === "partial-payment"
                                 ? order.partialPayments && order.partialPayments.length > 0
                                   ? order.partialPayments.reduce((acc: string, payment: { cash: number; credit_kart: number; ticket: number }) => {
@@ -259,7 +265,7 @@ const PastOrdersPage: React.FC = () => {
                   </tbody>
                 </table>
 
-                {(!pastOrders || pastOrders.length === 0) && (
+                {(!filteredPastOrders || filteredPastOrders.length === 0) && (
                   <div className="text-center py-12">
                     <div className="text-white/70 text-lg mb-2">
                       Henüz tamamlanmış sipariş yok

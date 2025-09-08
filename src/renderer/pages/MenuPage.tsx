@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { PaymentMethod } from "../../shared/types";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState, AppDispatch } from "../store/store";
 import { fetchMenuItems, selectCategory } from "../store/slices/menuSlice";
@@ -23,7 +24,7 @@ const MenuPage: React.FC<MenuPageProps> = ({ orderType, onAdminClick, onMenuMana
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<"nakit" | "kredi-karti" | "ticket" | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(null);
 
   useEffect(() => {
     dispatch(fetchMenuItems());
@@ -76,9 +77,9 @@ const MenuPage: React.FC<MenuPageProps> = ({ orderType, onAdminClick, onMenuMana
     }
   };
 
-  const handlePaymentSubmit = (paymentMethod: string, customerName?: any) => {
-    const payload: any = { items: currentOrder, orderType, paymentMethod, isPaid: true, customerName: null };
-    if (paymentMethod === "borc") payload.customerName = customerName;
+  const handlePaymentSubmit = (paymentMethod: string, customerId?: number) => {
+    const payload: any = { items: currentOrder, orderType, paymentMethod, isPaid: true, customerId: null };
+    if (paymentMethod === "borc") payload.customerId = customerId ?? null;
     if (orderType === "dine-in") payload.tableId = currentTableId;
     dispatch(createOrder(payload));
     setQuantities({});
@@ -114,8 +115,8 @@ const MenuPage: React.FC<MenuPageProps> = ({ orderType, onAdminClick, onMenuMana
         isOpen={showPaymentModal}
         onClose={handlePaymentModalClose}
         onPaymentSubmit={handlePaymentSubmit}
-        selectedPaymentMethod={selectedPaymentMethod}
-        onPaymentMethodSelect={setSelectedPaymentMethod}
+  selectedPaymentMethod={selectedPaymentMethod}
+  onPaymentMethodSelect={(m) => setSelectedPaymentMethod(m)}
         totalAmount={getTotalOrderValue()}
         orderItems={currentOrder}
         orderInfo={currentTable ? { tableNumber: currentTable.number } : undefined}

@@ -109,7 +109,7 @@ export class DatabaseManager {
   updateOrderStatusValidated!: (orderId: number, newStatus: string, expectedVersion?: number) => Promise<any>;
   createOrder!: (orderData: any) => Promise<Order>;
   getOrders!: () => Promise<Order[]>;
-  processPayment!: (paymentData: { orderId: number; amount: number; method: string; customer_id?: string }) => Promise<any>;
+  processPayment!: (paymentData: { orderId: number; amount: number; method: string; customer_id?: number }) => Promise<any>;
   updateOrderStatus!: (orderId: number, status: string) => Promise<Order>;
   deleteOrder!: (orderId: number) => Promise<boolean>;
   getPastOrders!: () => Promise<any[]>;
@@ -142,6 +142,9 @@ export class DatabaseManager {
   deleteCustomer!: (id: number) => Promise<boolean>;
   searchCustomers!: (query: string) => Promise<Customer[]>;
   getCustomersWithDebt!: () => Promise<Array<{ id: number; customerName: string; debt: number }>>;
+  getCustomerDebts!: (customerId: number) => Promise<any[]>;
+  settleCustomerDebts!: (data: { customerId: number; orderHistoryIds: number[]; method: string }) => Promise<boolean>;
+  getCustomerOrderHistory!: (customerId?: number) => Promise<any[]>;
   // Features
   getFeatureFlags!: () => Promise<any>;
   setMobileEnabled!: (enabled: boolean) => Promise<any>;
@@ -214,7 +217,7 @@ export class DatabaseManager {
       `CREATE TABLE IF NOT EXISTS tables (id SERIAL PRIMARY KEY, number TEXT NOT NULL UNIQUE, seats INTEGER NOT NULL, status TEXT DEFAULT 'available', category_id INTEGER NOT NULL, x INTEGER DEFAULT 0, y INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES table_categories(id))`,
       `CREATE TABLE IF NOT EXISTS menu_categories (id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, color TEXT NOT NULL DEFAULT '#6B7280', is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
       `CREATE TABLE IF NOT EXISTS menu_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, price REAL NOT NULL, category TEXT NOT NULL, category_id INTEGER, available BOOLEAN DEFAULT TRUE, is_active BOOLEAN DEFAULT TRUE, image TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES menu_categories(id))`,
-      `CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, table_id INTEGER, order_type TEXT DEFAULT 'dine-in', customer_name TEXT, payment_status TEXT DEFAULT 'unpaid', paid_at TIMESTAMP, payment_method TEXT, paid_amount REAL, table_number TEXT, status TEXT DEFAULT 'pending', total REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, version INTEGER DEFAULT 0, FOREIGN KEY (table_id) REFERENCES tables(id))`,
+      `CREATE TABLE IF NOT EXISTS orders (id SERIAL PRIMARY KEY, table_id INTEGER, order_type TEXT DEFAULT 'dine-in', customer_id INTEGER, customer_name TEXT, payment_status TEXT DEFAULT 'unpaid', paid_at TIMESTAMP, payment_method TEXT, paid_amount REAL, table_number TEXT, status TEXT DEFAULT 'pending', total REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, version INTEGER DEFAULT 0, FOREIGN KEY (table_id) REFERENCES tables(id), FOREIGN KEY (customer_id) REFERENCES customers(id))`,
       `CREATE TABLE IF NOT EXISTS order_items (id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL, menu_item_id INTEGER NOT NULL, quantity INTEGER NOT NULL, price REAL NOT NULL, notes TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (order_id) REFERENCES orders(id), FOREIGN KEY (menu_item_id) REFERENCES menu_items(id))`,
       `CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT, full_name TEXT NOT NULL, role TEXT DEFAULT 'waiter', is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, last_login TIMESTAMP,  last_checkin_at TIMESTAMP)`,
       `CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, customer_name TEXT NOT NULL, address TEXT, telephone_number TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
@@ -234,6 +237,7 @@ export class DatabaseManager {
     const alters = [
       "ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
       "ALTER TABLE orders ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 0",
+      "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id INTEGER",
       "ALTER TABLE tables ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
       "ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
       "ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
@@ -244,7 +248,8 @@ export class DatabaseManager {
       "CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)",
       "CREATE INDEX IF NOT EXISTS idx_tables_status ON tables(status)",
       "CREATE INDEX IF NOT EXISTS idx_menu_items_updated_at ON menu_items(updated_at)",
-      "CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON orders(updated_at)"
+      "CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON orders(updated_at)",
+      "CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id)"
     ];
     for (const i of indexes) { try { await this.run(i); } catch (e) { console.warn('Index create skip:', i, e?.toString()); } }
   }

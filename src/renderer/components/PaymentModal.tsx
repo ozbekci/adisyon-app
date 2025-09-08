@@ -12,11 +12,11 @@ interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPaymentSubmit: (
-    paymentMethod: "nakit" | "kredi-karti" | "ticket" | "borc",
-    customerName?: any
-  ) => void;
-  selectedPaymentMethod: "nakit" | "kredi-karti" | "ticket" | null;
-  onPaymentMethodSelect: (method: "nakit" | "kredi-karti" | "ticket") => void;
+    paymentMethod: import('../../shared/types').PaymentMethod,
+  customerId?: number
+  ) => void | Promise<void>;
+  selectedPaymentMethod: import('../../shared/types').PaymentMethod | null;
+  onPaymentMethodSelect: (method: import('../../shared/types').PaymentMethod | null) => void;
   totalAmount: number;
   orderInfo?: {
     tableNumber?: string;
@@ -25,7 +25,7 @@ interface PaymentModalProps {
   orderItems?: OrderItem[];
   title?: string;
   onSplitPayment?: (splitData: {
-    paymentMethod: "nakit" | "kredi-karti" | "ticket";
+    paymentMethod: import('../../shared/types').PaymentMethod;
     splitType: "items" | "amount";
     splitItems?: { itemId: number; quantity: number }[];
     splitAmount?: number;
@@ -47,13 +47,30 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const [customers, setCustomers] = useState<any[]>([]);
   const [showSplitOptions, setShowSplitOptions] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  // Store just the selected customer id for simplicity
+  const [selectedCustomer, setSelectedCustomer] = useState<number | null>(null);
+  const [customerSearch, setCustomerSearch] = useState('');
   const [splitType, setSplitType] = useState<"items" | "amount">("items");
   const [splitItems, setSplitItems] = useState<{ [itemId: number]: number }>(
     {}
   );
   const [splitAmount, setSplitAmount] = useState<string>("");
   const splitAmountInputRef = useRef<HTMLInputElement>(null);
+
+  // Metin normalize: büyük/küçük, Türkçe karakter, aksan, ekstra boşluk ayıkla
+  const normalizeText = (s: string) => s
+    ? s
+        .toLocaleLowerCase('tr')
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu,'') // aksanları sil
+        .replace(/ı/g,'i')              // dotless i -> i
+        .replace(/[^a-z0-9çğıöşü\s]/g,' ') // alfasayısal dışını boşluk yap (tr karakterlerini bırak)
+        .replace(/\s+/g,' ')
+        .trim()
+    : '';
+
+  // Seçili müşterinin detay paneli açık mı (toggle için aynı ID'ye tekrar tıklayınca kapanacak)
+  const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
 
   useEffect(() => {
     if (showCustomerModal) {
@@ -621,7 +638,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               left: 0,
               right: 0,
               bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.4)",
+              backgroundColor: "rgba(0,0,0,0.55)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -630,11 +647,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           >
             <div
               style={{
-                backgroundColor: "white",
+                background: "linear-gradient(145deg,#1f2937,#111827)",
                 borderRadius: "8px",
-                padding: "24px",
+                padding: "24px 24px 20px",
                 minWidth: "320px",
                 boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)",
+                border: '1px solid rgba(255,255,255,0.08)'
               }}
             >
               <h3
@@ -643,45 +661,137 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   fontWeight: "bold",
                   marginBottom: "16px",
                   textAlign: "center",
+                  color: '#f9fafb'
                 }}
               >
                 Müşteri Seç
               </h3>
+              {/* Search & Info bar */}
+              <div style={{
+                display:'flex',
+                gap:8,
+                marginBottom:8,
+                alignItems:'center'
+              }}>
+                <input
+                  autoFocus
+                  placeholder="Ara..."
+                  value={customerSearch}
+                  onChange={(e)=> setCustomerSearch(e.target.value)}
+                  style={{
+                    flex:1,
+                    background:'#0f172a',
+                    border:'1px solid rgba(255,255,255,0.08)',
+                    color:'#e2e8f0',
+                    padding:'6px 10px',
+                    borderRadius:6,
+                    fontSize:13,
+                    outline:'none'
+                  }}
+                />
+                {/* Kapat ipucunu kaldırdık - kullanıcı ESC ile yine kapatabilir */}
+              </div>
+              {/* Info bar */}
+              <div style={{
+                background: '#0f172a',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 6,
+                padding: '8px 10px',
+                fontSize: 12,
+                color: '#94a3b8',
+                marginBottom: 10,
+                display: 'flex',
+                justifyContent: 'space-between'
+              }}>
+                <span>Toplam: {customers.length}</span>
+                {selectedCustomer && (
+                  <span style={{color:'#38bdf8'}}>Seçili ID: {selectedCustomer}</span>
+                )}
+              </div>
               {/* Örnek müşteri listesi, gerçek projede API'den veya store'dan alınmalı */}
               <div
                 style={{
-                  maxHeight: "200px",
+                  maxHeight: "260px",
                   overflowY: "auto",
                   marginBottom: "16px",
+                  paddingRight: 4
                 }}
               >
                 {customers.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "#6b7280" }}>
-                    Müşteri bulunamadı
-                  </div>
+                  <div style={{ textAlign: "center", color: "#64748b", fontSize: 14 }}>Müşteri bulunamadı</div>
                 ) : (
-                  customers.map((customer) => (
-                    <div
-                      key={customer.id}
-                      style={{
-                        padding: "10px",
-                        marginBottom: "8px",
-                        backgroundColor:
-                          selectedCustomer?.id === customer.id
-                            ? "#e0e7ff"
-                            : "#f3f4f6",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        fontWeight:
-                          selectedCustomer?.id === customer.id
-                            ? "bold"
-                            : "normal",
-                      }}
-                      onClick={() => setSelectedCustomer(customer.id)}
-                    >
-                      {customer.customerName}
-                    </div>
-                  ))
+                  customers
+                    .filter(c => {
+                      if(!customerSearch) return true;
+                      const target = normalizeText(c.customerName ?? '');
+                      const query = normalizeText(customerSearch);
+                      return target.includes(query);
+                    })
+                    .map((customer) => {
+                    const active = selectedCustomer === customer.id;
+                    return (
+                      <div key={customer.id} style={{marginBottom:6}}>
+                        <div
+                          onClick={() => {
+                            setSelectedCustomer(customer.id);
+                            setExpandedCustomerId(prev => prev === customer.id ? null : customer.id);
+                          }}
+                          style={{
+                            padding: '10px 12px',
+                            background: active ? 'linear-gradient(120deg,#2563eb,#1d4ed8)' : '#182230',
+                            border: active ? '1px solid #60a5fa' : '1px solid rgba(255,255,255,0.05)',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'background .18s,border-color .18s',
+                            color: active ? '#ffffff' : '#e2e8f0',
+                            fontWeight: active ? 600 : 500,
+                            fontSize: 14,
+                            letterSpacing: 0.2,
+                          }}
+                          onMouseEnter={(e) => { if (!active) (e.currentTarget.style.background = '#243044'); }}
+                          onMouseLeave={(e) => { if (!active) (e.currentTarget.style.background = '#182230'); }}
+                        >
+                          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap', flex:1, paddingRight:8}}>{customer.customerName}</span>
+                          <div style={{display:'flex',alignItems:'center',gap:6}}>
+                            {customer.address && (
+                              <span style={{fontSize:10,opacity:.6, background:'rgba(255,255,255,0.12)',padding:'2px 5px',borderRadius:4}}>Adres</span>
+                            )}
+                            {(customer.telephoneNumber) && (
+                              <span style={{fontSize:10,opacity:.6, background:'rgba(255,255,255,0.12)',padding:'2px 5px',borderRadius:4}}>Tel</span>
+                            )}
+                            {active && <span style={{fontSize:11, background:'rgba(255,255,255,0.25)', padding:'2px 6px', borderRadius:999}}>Seçili</span>}
+                          </div>
+                        </div>
+                        {expandedCustomerId === customer.id && (customer.address || customer.telephoneNumber) && (
+                          <div style={{
+                            marginTop:4,
+                            background:'rgba(255,255,255,0.04)',
+                            border:'1px solid rgba(255,255,255,0.08)',
+                            borderRadius:6,
+                            padding:'8px 10px',
+                            fontSize:12,
+                            color:'#cbd5e1',
+                            lineHeight:1.4,
+                            backdropFilter:'blur(2px)'
+                          }}>
+                            {customer.address && (
+                              <div style={{marginBottom: customer.telephoneNumber ? 4 : 0}}>
+                                <span style={{opacity:.55}}>Adres: </span>{customer.address}
+                              </div>
+                            )}
+                            {customer.telephoneNumber && (
+                              <div>
+                                <span style={{opacity:.55}}>Tel: </span>{customer.telephoneNumber}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
               <div style={{ display: "flex", gap: "12px" }}>
@@ -689,12 +799,13 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   onClick={() => setShowCustomerModal(false)}
                   style={{
                     flex: 1,
-                    padding: "8px 16px",
-                    border: "1px solid #d1d5db",
+                    padding: "10px 16px",
+                    border: "1px solid rgba(255,255,255,0.15)",
                     borderRadius: "8px",
-                    backgroundColor: "white",
-                    color: "#374151",
+                    backgroundColor: "#1e293b",
+                    color: "#e2e8f0",
                     cursor: "pointer",
+                    fontWeight: 500,
                   }}
                 >
                   İptal
@@ -710,14 +821,20 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   disabled={!selectedCustomer}
                   style={{
                     flex: 1,
-                    padding: "8px 16px",
-                    backgroundColor: selectedCustomer ? "#f59e42" : "#9ca3af",
-                    color: "white",
+                    padding: "10px 16px",
+                    background: selectedCustomer ? 'linear-gradient(90deg,#f59e0b,#f97316)' : '#475569',
+                    color: selectedCustomer ? '#ffffff' : '#cbd5e1',
                     borderRadius: "8px",
                     border: "none",
                     fontWeight: "600",
                     cursor: selectedCustomer ? "pointer" : "not-allowed",
+                    boxShadow: selectedCustomer ? '0 0 0 1px rgba(255,255,255,0.08),0 4px 12px -2px rgba(0,0,0,0.4)' : 'none',
+                    transition: 'filter .15s, transform .15s',
                   }}
+                  onMouseEnter={(e) => { if (selectedCustomer) e.currentTarget.style.filter='brightness(1.05)'; }}
+                  onMouseLeave={(e) => { if (selectedCustomer) e.currentTarget.style.filter='brightness(1)'; }}
+                  onMouseDown={(e) => { if (selectedCustomer) e.currentTarget.style.transform='translateY(1px)'; }}
+                  onMouseUp={(e) => { if (selectedCustomer) e.currentTarget.style.transform='translateY(0)'; }}
                 >
                   Borca Yaz
                 </button>

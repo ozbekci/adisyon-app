@@ -17,7 +17,7 @@ const PaymentsPage: React.FC = () => {
   const { dailyTotal } = useSelector((state: RootState) => state.payments);
   
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile' | 'debt'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'nakit' | 'kredi-karti' | 'borc'>('nakit');
   const [customerName, setCustomerName] = useState('');
   const [receivedAmount, setReceivedAmount] = useState<string>('');
 
@@ -49,10 +49,9 @@ const PaymentsPage: React.FC = () => {
   };
 
   const paymentMethods = [
-    { id: 'cash', name: 'Nakit', icon: BanknotesIcon, theme: { border: 'border-emerald-400', bg: 'bg-emerald-400/10', text: 'text-emerald-300' } },
-    { id: 'card', name: 'Kart', icon: CreditCardIcon, theme: { border: 'border-blue-400', bg: 'bg-blue-400/10', text: 'text-blue-300' } },
-    { id: 'mobile', name: 'Mobil Ödeme', icon: DevicePhoneMobileIcon, theme: { border: 'border-purple-400', bg: 'bg-purple-400/10', text: 'text-purple-300' } },
-    { id: 'debt', name: 'Borç', icon: CreditCardIcon, theme: { border: 'border-rose-400', bg: 'bg-rose-400/10', text: 'text-rose-300' } },
+    { id: 'nakit', name: 'Nakit', icon: BanknotesIcon, theme: { border: 'border-emerald-400', bg: 'bg-emerald-400/10', text: 'text-emerald-300' } },
+    { id: 'kredi-karti', name: 'Kart', icon: CreditCardIcon, theme: { border: 'border-blue-400', bg: 'bg-blue-400/10', text: 'text-blue-300' } },
+    { id: 'borc', name: 'Borç', icon: CreditCardIcon, theme: { border: 'border-rose-400', bg: 'bg-rose-400/10', text: 'text-rose-300' } },
   ] as const;
 
   return (
@@ -157,7 +156,7 @@ const PaymentsPage: React.FC = () => {
             </div>
 
             {/* Cash Payment Input */}
-            {paymentMethod === 'cash' && (
+            {paymentMethod === 'nakit' && (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-white/80 mb-2">
                   Alınan Tutar
@@ -192,7 +191,7 @@ const PaymentsPage: React.FC = () => {
             )}
 
             {/* Debt Name Input */}
-            {paymentMethod === 'debt' && (
+            {paymentMethod === 'borc' && (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-white/80 mb-2">Müşteri Adı</label>
                 <input
@@ -209,7 +208,7 @@ const PaymentsPage: React.FC = () => {
             <div className="mt-auto space-y-3">
               <button
                 onClick={handlePayment}
-                disabled={paymentMethod === 'cash' && calculateChange() < 0}
+                disabled={paymentMethod === 'nakit' && calculateChange() < 0}
                 className="w-full btn-success text-lg py-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Ödeme Al

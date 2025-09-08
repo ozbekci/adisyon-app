@@ -5,7 +5,7 @@ export interface Payment {
   id: number;
   orderId: number;
   amount: number;
-  method: 'cash' | 'card' | 'mobile';
+  method: import('../../../shared/types').PaymentMethod;
   status: 'pending' | 'completed' | 'failed';
   createdAt: string;
 }
@@ -27,7 +27,7 @@ const initialState: PaymentsState = {
 // Async thunks
 export const processPayment = createAsyncThunk(
   'payments/processPayment',
-  async (paymentData: { orderId: number; amount: number; method: string }) => {
+  async (paymentData: { orderId: number; amount: number; method: import('../../../shared/types').PaymentMethod }) => {
     return await window.electronAPI.processPayment(paymentData);
   }
 );

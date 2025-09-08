@@ -6,6 +6,9 @@ const electronAPI = {
   // Customers management
   getCustomers: () => ipcRenderer.invoke('get-customers'),
   getCustomersWithDebt: () => ipcRenderer.invoke('get-customers-with-debt'),
+  getCustomerDebts: (customerId: number) => ipcRenderer.invoke('get-customer-debts', customerId),
+  settleCustomerDebts: (data: { customerId: number; orderHistoryIds: number[]; method: string }) => ipcRenderer.invoke('settle-customer-debts', data),
+  getCustomerOrderHistory: (customerId?: number) => ipcRenderer.invoke('get-customer-order-history', customerId),
   addCustomer: (customerData: any) => ipcRenderer.invoke('add-customer', customerData),
   updateCustomer: (id: number, customerData: any) => ipcRenderer.invoke('update-customer', { id, customerData }),
   getTables: () => ipcRenderer.invoke('get-tables'),

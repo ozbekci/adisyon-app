@@ -4,15 +4,15 @@
   "main": "dist/main/main.js",
   "homepage": "./",
   "scripts": {
-    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3002 && npm run dev:main\"",
-    "dev:renderer": "vite",
-    "dev:main": "npm run build:main && npm run build:preload && copy src\\renderer\\admin-verify-standalone.html dist\\renderer\\ 2>nul & electron dist/main/main.js",
+  "dev": "dotenv -e .env -- concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3002 && npm run dev:main\"",
+  "dev:renderer": "vite",
+  "dev:main": "npm run build:main && npm run build:preload && cp -f src/renderer/admin-verify-standalone.html dist/renderer/ 2>/dev/null || true; dotenv -e .env -- electron dist/main/main.js",
     "build": "npm run build:renderer && npm run build:main && npm run build:preload",
-    "build:renderer": "vite build && cp src/renderer/admin-verify-standalone.html dist/renderer/",
+  "build:renderer": "vite build && cp -f src/renderer/admin-verify-standalone.html dist/renderer/ 2>/dev/null || true",
     "build:main": "tsc -p src/main",
     "build:preload": "tsc -p src/preload",
-    "package": "npm run build && electron-builder",
-    "start": "electron dist/main/main.js"
+  "package": "npm run build && electron-builder",
+  "start": "dotenv -e .env -- electron dist/main/main.js"
   },
   "keywords": [
     "restaurant",
@@ -47,7 +47,9 @@
     "socket.io-client": "^4.8.1",
     "sqlite3": "^5.1.7",
     "typescript": "^5.8.3",
-    "wait-on": "^8.0.3"
+  "wait-on": "^8.0.3",
+  "dotenv": "^16.4.5",
+  "dotenv-cli": "^7.4.2"
   },
   "devDependencies": {
     "@types/electron": "^1.4.38",

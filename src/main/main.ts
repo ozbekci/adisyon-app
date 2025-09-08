@@ -1,4 +1,3 @@
-
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { StartedServer, startServer } from './server/startServer';
 import * as path from 'path';
@@ -150,6 +149,35 @@ ipcMain.handle('get-customers-with-debt', async () => {
     return await dbManager.getCustomersWithDebt();
   } catch (error) {
     console.error('IPC: Error getting customers with debt:', error);
+    throw error;
+  }
+});
+
+// Customer debt details
+ipcMain.handle('get-customer-debts', async (_evt, customerId: number) => {
+  try {
+    return await dbManager.getCustomerDebts(customerId);
+  } catch (error) {
+    console.error('IPC: Error getting customer debts:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('settle-customer-debts', async (_evt, data: { customerId: number; orderHistoryIds: number[]; method: string }) => {
+  try {
+    return await dbManager.settleCustomerDebts(data);
+  } catch (error) {
+    console.error('IPC: Error settling customer debts:', error);
+    throw error;
+  }
+});
+
+// Customer order history (optional filter by customerId)
+ipcMain.handle('get-customer-order-history', async (_evt, customerId?: number) => {
+  try {
+    return await dbManager.getCustomerOrderHistory(customerId);
+  } catch (error) {
+    console.error('IPC: Error getting customer order history:', error);
     throw error;
   }
 });

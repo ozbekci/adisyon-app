@@ -18,13 +18,21 @@ export interface Order {
   items: OrderItem[];
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'paid';
   payment_status: 'unpaid' | 'paid' | 'debt';
-  payment_method?: 'nakit' | 'kredi-karti' | 'ticket' | 'partial-payment' | 'cash' | 'card' | 'mobile';
+  payment_method?: PaymentMethod;
   partialPayments?: Array<{ cash: number; credit_kart: number; ticket: number }>;
   total: number;
   created_at: string;
   updatedAt: string;
   completed_at?: string;
 }
+
+// Unified payment method type used across renderer and main. Keep all variants seen in code/db.
+export type PaymentMethod =
+  | 'nakit'
+  | 'kredi-karti'
+  | 'ticket'
+  | 'borc'
+  | 'partial-payment';
 
 export interface OrderItem {
   id: number;
@@ -51,6 +59,9 @@ export interface ElectronAPI {
   getProductSales: (params?: { start?: string; end?: string; orderBy?: 'quantity' | 'revenue' }) => Promise<any[]>;
   getCustomers: () => Promise<any[]>;
   getCustomersWithDebt: () => Promise<any[]>;
+  getCustomerDebts: (customerId: number) => Promise<any[]>;
+  settleCustomerDebts: (data: { customerId: number; orderHistoryIds: number[]; method: PaymentMethod }) => Promise<boolean>;
+  getCustomerOrderHistory?: (customerId?: number) => Promise<any[]>;
   
   // User management
   authenticateUser: (username: string, password: string) => Promise<User | null>;
