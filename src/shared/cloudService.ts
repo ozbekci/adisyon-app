@@ -141,11 +141,11 @@ class CloudService {
       return false;
     }
   }
+
   private handleLicenseError() {
     // Handle license expiry or invalid license
-    window.Electronapi?.showLicenseExpiredDialog?.();
+    window.electronAPI?.showLicenseExpiredDialog?.();
   }
-
 
   isConnected(): boolean {
     return this.config !== null;
